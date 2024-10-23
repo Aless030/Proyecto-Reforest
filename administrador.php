@@ -1,596 +1,201 @@
 <?php
+// Conexión a la base de datos
+$conn = new mysqli("localhost", "root", "", "reforest", 3308);
 
-class DB
-{
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    // Procesar datos del formulario
+    $especie = $_POST['especie'];
+    $edad = $_POST['edad'];
+    $cuidados = $_POST['cuidados'];
+    $estado = $_POST['estado'];
+    $fotoUrl = $_POST['fotoUrl'];
+    $altura = $_POST['altura'];
+    $diametroTronco = $_POST['diametroTronco'];
+    $coordenadas = "POINT(" . $_POST['lng'] . " " . $_POST['lat'] . ")";
 
-    public $pdo = null;
+    // Insertar en la base de datos
+    $sql = "INSERT INTO arboles (especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, coordenadas) 
+            VALUES ('$especie', $edad, '$cuidados', '$estado', '$fotoUrl', $altura, $diametroTronco, ST_GeomFromText('$coordenadas'))";
+    $conn->query($sql);
+}
 
-    function __construct()
-    {
+// Obtener todos los árboles de la base de datos para mostrarlos en el mapa
+$sql = "SELECT especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, ST_AsText(coordenadas) as coordenadas FROM arboles";
+$result = $conn->query($sql);
 
-        $this->pdo = new PDO(
-            "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
-            DB_USER,
-            DB_PASSWORD,
-            [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-            ]
-        );
+// Array para almacenar los árboles
+$arboles = [];
+if ($result->num_rows > 0) {
+    while ($row = $result->fetch_assoc()) {
+        $arboles[] = $row;
     }
 }
-define("DB_HOST", "localhost");
-define("DB_NAME", "reforest");
-define("DB_CHARSET", "utf8mb4");
-define("DB_USER", "root");
-define("DB_PASSWORD", "");
-define("DB_PORT", 3308);
-$_DB = new DB();
-
-
+$conn->close();
 ?>
+
 <!DOCTYPE html>
-<html class="h-100" lang="en">
+<html lang="es">
 
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no" />
-    <meta name="description" content="A growing collection of ready to use components for the CSS framework Bootstrap 5" />
-    <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="img/favicon-16x16.png" />
-    <link rel="icon" type="image/png" sizes="96x96" href=".t/img/favicon.png" />
-    <meta name="author" content="Holger Koenemann" />
-    <meta name="generator" content="Eleventy v2.0.0" />
-    <meta name="HandheldFriendly" content="true" />
-
-    <link rel="stylesheet" href="css/theme.min.css" />
-    <script src='https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.js'></script>
-    <link href='https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.css' rel='stylesheet' />
-    <link href='procesar_registro.php' rel='' />
-    <link href='modelo.php' rel='' />
-    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-    <!-- Agrega tu clave de acceso de Mapbox -->
-
-    <!-- Agrega tus estilos CSS personalizados -->
-
-    <script>
-        function mostrarModal() {
-            var modal = document.getElementById("modal");
-            modal.style.display = "block";
-        }
-
-        function cerrarModal() {
-            var modal = document.getElementById("modal");
-            modal.style.display = "none";
-        }
-    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administrador</title>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.css" rel="stylesheet" />
     <style>
-        /* inter-300 - latin */
-        @font-face {
-            font-family: "Inter";
-            font-style: normal;
-            font-weight: 300;
-            font-display: swap;
-            src: local(""), url("./fonts/inter-v12-latin-300.woff2") format("woff2"),
-                /* Chrome 26+, Opera 23+, Firefox 39+ */
-                url("./fonts/inter-v12-latin-300.woff") format("woff");
-            /* Chrome 6+, Firefox 3.6+, IE 9+, Safari 5.1+ */
-        }
-
-        @font-face {
-            font-family: "Inter";
-            font-style: normal;
-            font-weight: 500;
-            font-display: swap;
-            src: local(""), url("./fonts/inter-v12-latin-500.woff2") format("woff2"),
-                /* Chrome 26+, Opera 23+, Firefox 39+ */
-                url("./fonts/inter-v12-latin-500.woff") format("woff");
-            /* Chrome 6+, Firefox 3.6+, IE 9+, Safari 5.1+ */
-        }
-
-        @font-face {
-            font-family: "Inter";
-            font-style: normal;
-            font-weight: 700;
-            font-display: swap;
-            src: local(""), url("./fonts/inter-v12-latin-700.woff2") format("woff2"),
-                /* Chrome 26+, Opera 23+, Firefox 39+ */
-                url("./fonts/inter-v12-latin-700.woff") format("woff");
-            /* Chrome 6+, Firefox 3.6+, IE 9+, Safari 5.1+ */
-        }
-
-        .table {
-            width: 100%;
-            margin-bottom: 1rem;
-            color: #212529;
-            background-color: #fff;
-        }
-
-        .table th,
-        .table td {
-            padding: 0.75rem;
-            vertical-align: top;
-            border-top: 1px solid #dee2e6;
-        }
-
-        .table thead th {
-            vertical-align: bottom;
-            border-bottom: 2px solid #dee2e6;
-        }
-
-        .table tbody+tbody {
-            border-top: 2px solid #dee2e6;
-        }
-
-        /* Estilos generales para el carrusel y los formularios */
-        .carousel-container {
-            width: 550px;
-            overflow: hidden;
-            margin: 0 auto;
-        }
-
-        .carousel {
-            display: flex;
-            transition: transform 0.5s;
-        }
-
-        .slide {
-            flex: 0 0 100%;
-            width: 500px;
-            padding: 20px;
-
-            background-color: #f9f9f9;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
-            display: none;
-        }
-
-        .titulo-pagina {
-            font-size: 80px;
-            font-weight: bold;
-
-            /* Cambia el color según tu preferencia */
-            text-align: left;
-            /* Otros estilos adicionales según tus necesidades */
-        }
-
-        #modal {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            /* Ajusta este valor según sea necesario */
-        }
-
-        .modal-contenido {
-            background-color: white;
-            margin: 5% auto;
-            /* Ajusta el margen superior según sea necesario */
-            padding: 20px;
-            border: 1px solid #888;
-            max-width: 100%;
-            /* Ajusta el ancho máximo del modal según sea necesario */
-            border-radius: 30px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
-            position: relative;
-            z-index: 1001;
-            /* Asegura que el contenido del modal esté por encima del fondo del modal */
-        }
-
-
-        .cerrar {
-            color: #aaa;
-            float: right;
-            font-size: 28px;
-            font-weight: bold;
-            cursor: pointer;
-            z-index: 1002;
-            /* Asegura que el botón de cerrar esté por encima del contenido del modal */
-        }
-
-        .cerrar:hover,
-        .cerrar:focus {
-            color: black;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        /* Estilos personalizados para el mapa */
-        #map {
-            width: 100%;
-
+        .tree-marker {
+            background-image: url('https://cdn2.iconfinder.com/data/icons/miscellaneous-iii-glyph-style/150/tree-512.png');
+            background-size: cover;
+            width: 30px;
+            height: 30px;
         }
     </style>
-
 </head>
 
-<body data-bs-spy="scroll" data-bs-target="#navScroll">
-    <nav id="navScroll" class="navbar navbar-expand-lg navbar-light fixed-top" tabindex="0" style="background-color: #f9f9f9e0;">
-        <div class="container">
-            <a class="navbar-brand pe-4 fs-4" href="#top">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-layers-half" viewbox="0 0 16 16">
+<body>
+    <h1>Agregar Árbol</h1>
+    <form id="arbolForm">
+        <input type="text" name="especie" placeholder="Especie del Árbol" required />
+        <input type="number" name="edad" placeholder="Edad del Árbol" required />
+        <input type="text" name="cuidados" placeholder="Cuidados Necesarios" required />
+        <input type="text" name="estado" placeholder="Estado del Árbol" required />
+        <input type="text" name="fotoUrl" placeholder="URL de la foto" required />
+        <input type="number" step="0.1" name="altura" placeholder="Altura en metros" required />
+        <input type="number" step="0.1" name="diametroTronco" placeholder="Diámetro en cm" required />
+        <button type="button" onclick="confirmarUbicacion()">Confirmar Ubicación</button>
+        <button type="button" id="agregarArbolBtn" disabled onclick="obtenerCoordenadas()">Agregar Árbol</button>
+    </form>
 
+    <div id="map" style="width: 100%; height: 500px;"></div>
 
-                </svg>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoiYWxlc3NpcyIsImEiOiJjbGcxbHBtbHQwdDU5M2RubDFodjY3a2x0In0.NXe43GdM4PJBj7ow0Dnkpw';
 
-                <span class="ms-1 fw-bolde">ReforestLife<i class='bx bxs-tree-alt'></i></span>
-            </a>
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v11',
+            center: [-66.1704015, -17.3761244],
+            zoom: 12
+        });
 
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarSupportedContent">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                    <li class="nav-item">
-                        <a class="nav-link" href="#aboutus"> Registrados </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#numbers"> Interesados </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#map"> ----</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#workwithus"> ------ </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#testimonials"> </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link btn btn-dark  shadow rounded-0" href="http://localhost/Proyecto%20Reforest/index.html" style="color:white ;">
-                            Salir
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+        let marker, lng, lat;
 
-    <div class="w-100 overflow-hidden bg-gray-100" id="top">
-        <div class="container position-relative">
-            <div class="col-12 col-lg-8 mt-0 h-100 position-absolute top-0 end-0 bg-cover" data-aos="fade-left" style="background-image: url(img/pla.jpg)"></div>
-            <div class="row">
-                <div class="col-lg-7 py-vh-6 position-relative" data-aos="fade-right">
-                    <h1 class="display-1 fw-bold mt-5">Bienvenido <br> Administrador</h1>
-                    <p class="lead">
-                        Aca Controlaremos todo respecto a nuestro voluntariado
-                    </p>
-
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="py-vh-4 bg-gray-100 w-100 overflow-hidden" id="aboutus">
-
-        <div class="container" >
-            <h2 style="text-align: center;">Lista de Voluntarios</h2>
-            <br>
-            <button type="button" onclick="mostrarModal()" class="btn btn-primary">Nuevo</button>
-            <table class="table table-bordered">
-
-                <thead>
-                    <tr>
-                        <th>Nombre</th>
-                        <th>Fecha de Nacimiento</th>
-                        <th>Género</th>
-                        <th>Teléfono</th>
-                        <th>Dirección</th>
-                        <th>Correo Electrónico</th>
-                        <th>Número de Identificación</th>
-                        <th>Foto de Perfil</th>
-                        <th>Documentos de Identificación</th>
-                        <th>Certificado de Nacimiento</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    $query = $_DB->pdo->query("SELECT * FROM voluntarios");
-                    $results = $query->fetchAll();
-
-                    foreach ($results as $voluntario) {
-                        echo "<tr>";
-                        echo "<td>" . $voluntario['nombre'] . "</td>";
-                        echo "<td>" . $voluntario['fecha_nacimiento'] . "</td>";
-                        echo "<td>" . $voluntario['genero'] . "</td>";
-                        echo "<td>" . $voluntario['telefono'] . "</td>";
-                        echo "<td>" . $voluntario['direccion'] . "</td>";
-                        echo "<td>" . $voluntario['correo'] . "</td>";
-                        echo "<td>" . $voluntario['numero_identificacion'] . "</td>";
-                        echo "<td>" . $voluntario['foto_perfil'] . "</td>";
-                        echo "<td>" . $voluntario['documentos_identificacion'] . "</td>";
-                        echo "<td>" . $voluntario['certificado_nacimiento'] . "</td>";
-                        echo "</tr>";
-                    }
-                    ?>
-                </tbody>
-            </table>
-
-        </div>
-        <div id="modal" class="modal" >
-            <div class="modal-contenido">
-                <span class="cerrar" onclick="cerrarModal()">&times;</span>
-                <h2 style="color: black">Ingresa Nuevo Voluntario</h2>
-
-                <!-- Agrega un contenedor para mostrar el mensaje de error -->
-                <div class="carousel">
-                    <form id="fullForm" action="controlador.php" method="post" onsubmit="return validarFormularioActual()">
-                        <div class="slide card p-4 custom-width" id="slide1" style="
-                        display: block;
-
-                        border-radius: 5px;
-                        box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
-                        background-color: #202529;
-                        color: #e0e0e0;
-                      ">
-                            <!-- Contenido del primer formulario -->
-                            <div class="form-group">
-                                <label for="nombre">Nombre Completo:</label>
-                                <input type="text" class="form-control" id="nombre" name="nombre" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="fecha_nacimiento">Fecha de Nacimiento:</label>
-                                <input type="date" class="form-control" id="fecha_nacimiento" name="fecha_nacimiento" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="genero">Género:</label>
-                                <select class="form-control" id="genero" name="genero" required>
-                                    <option value="Masculino">Masculino</option>
-                                    <option value="Femenino">Femenino</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="telefono">Número de Teléfono:</label>
-                                <input type="tel" class="form-control" id="telefono" name="telefono" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="telefono">Direccion:</label>
-                                <input type="text" class="form-control" id="direccion" name="direccion" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="telefono">Correo Electronico:</label>
-                                <input type="email" class="form-control" id="correo" name="correo" required />
-                            </div>
-
-
-
-
-                        </div>
-                        <div class="slide card p-4 custom-width" id="slide2" style="
-                        display: none;
-
-                        border-radius: 5px;
-                        box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
-                        background-color: #202529;
-                        color: #e0e0e0;
-                      ">
-                            <!-- Contenido del segundo formulario -->
-                            <div class="form-group">
-                                <label for="numero_identificacion">Número de Identificación:</label>
-                                <input type="text" class="form-control" id="numero_identificacion" name="numero_identificacion" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="foto_perfil">Foto de Perfil:</label>
-                                <input type="file" class="form-control-file" id="foto_perfil" name="foto_perfil" accept=".jpg, .jpeg, .png" required />
-                                <small>(Subir una foto de perfil)</small>
-                            </div>
-                            <!-- Resto de campos del segundo formulario -->
-                        </div>
-                        <!-- ... (resto de formularios) ... -->
-                        <div class="slide card p-4 custom-width" id="slide3" style="
-                        display: none;
-
-                        border-radius: 5px;
-                        box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
-                        background-color: #202529;
-                        color: #e0e0e0;
-                      ">
-                            <!-- Contenido del segundo formulario -->
-                            <div class="form-group">
-                                <label for="documentos_identificacion">Carnet de Identificación:</label>
-                                <input type="file" class="form-control-file" id="documentos_identificacion" name="documentos_identificacion" accept=".pdf, .jpg, .png" required />
-                                <small>(Subir copia de cédula)</small>
-                            </div>
-                            <!-- Nuevos Campos de Documentación -->
-                            <div class="form-group">
-                                <label for="certificado_nacimiento">Certificado de Nacimiento:</label>
-                                <input type="file" class="form-control-file" id="certificado_nacimiento" name="certificado_nacimiento" accept=".pdf, .jpg, .png" required />
-                                <small>(Subir copia del certificado de nacimiento Opcional)</small>
-                            </div>
-
-                            <!-- Resto de campos del segundo formulario -->
-                        </div>
-                        <div class="text-center">
-                            <button type="button" id="prev" class="btn btn-primary" style="
-                          background-color: orange;
-                          width: 20%;
-                          display: none;
-                        ">
-                                Anterior
-                            </button>
-                            <button type="button" id="next" class="btn btn-primary" style="background-color: orange; width: 20%">
-                                Siguiente
-                            </button>
-                            <button type="submit" class="btn btn-primary" style="background-color: orange; display: none">
-                                Enviar
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class=" bg-gray-100 w-100 overflow-hidden" id="numbers">
-        <!-- Nuevo contenedor para mostrar correos de interesados -->
-        <div class="container">
-            <h2 style="text-align: center;">Lista de Interesados</h2>
-            <table class="table table-bordered">
-                <thead>
-                    <tr>
-                        <th>Correo Electrónico</th>
-                        <!-- Agrega más columnas si es necesario -->
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    // Recupera los correos de los interesados
-                    $queryInteresados = $_DB->pdo->query("SELECT * FROM usuarios");
-                    $resultsInteresados = $queryInteresados->fetchAll();
-
-                    foreach ($resultsInteresados as $interesado) {
-                        echo "<tr>";
-                        echo "<td>" . $interesado['email'] . "</td>";
-                        // Agrega más columnas si es necesario
-                        echo "</tr>";
-                    }
-                    ?>
-                </tbody>
-            </table>
-        </div>
-
-
-        <footer>
-            <div class="container small border-top">
-                <div class="row py-2 d-flex justify-content-between">
-
-                    <div class="text-secondary mt-3 col-12 col-lg-6 col-xl-3 border-end p-5">
-                        <strong class="h6 mb-3">ReforestLife<i class='bx bxs-tree-alt'></i></strong><br />
-
-                        <address class="text-secondary mt-3">
-
-                            "Cambiando la vida del mundo"
-                        </address>
-                        <ul class="nav flex-column"></ul>
-                    </div>
-                    <div class="text-secondary mt-3 col-12 col-lg-6 col-xl-3 border-end p-5">
-                        <h3 class="h6 mb-3">Facebook</h3>
-                        <address class="text-secondary mt-3">
-
-                            Siguenos en facebook:
-                        </address>
-                        <ul class="nav flex-column"></ul>
-                    </div>
-                    <div class="text-secondary mt-3 col-12 col-lg-6 col-xl-3 border-end p-5">
-                        <h3 class="h6 mb-3">Instagram</h3>
-                        <address class="text-secondary mt-3">
-
-                            Siguenos en instagram:
-                        </address>
-                        <ul class="nav flex-column"></ul>
-                    </div>
-                    <div class="text-secondary mt-3 col-12 col-lg-6 col-xl-3 p-5">
-                        <h3 class="h6 mb-3">Whatsapp</h3>
-                        <address class="text-secondary mt-3">
-
-                            Siguenos en WhatsApp:
-                        </address>
-                        <ul class="nav flex-column"></ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="container text-center py-3 small">
-                By
-                <a href="https://github.com/Aless030" class="link-fancy" target="_blank">ReforestLife.com</a>
-            </div>
-        </footer>
-
-        <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.10.2/dist/umd/popper.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.5.0/dist/js/bootstrap.min.js"></script>
-        <script src="js/bootstrap.bundle.min.js"></script>
-        <script src="js/aos.js"></script>
-
-        <script>
-            AOS.init({
-                duration: 800, // values from 0 to 3000, with step 50ms
-            });
-
-            const formCount = 3;
-            let currentForm = 1;
-
-            // EventListeners para el botón "Siguiente" y "Anterior"
-            document.getElementById("next").addEventListener("click", function() {
-                if (validarFormularioActual()) {
-                    if (currentForm < formCount) {
-                        document.getElementById("slide" + currentForm).style.display =
-                            "none";
-                        currentForm++;
-                        document.getElementById("slide" + currentForm).style.display =
-                            "block";
-
-                        document.getElementById("prev").style.display = "block";
-                        if (currentForm === formCount) {
-                            document.getElementById("next").style.display = "none";
-                            document.querySelector(
-                                'form button[type="submit"]'
-                            ).style.display = "block";
+        // Enmarcar la zona del parque Lincoln
+        map.on('load', function() {
+            map.addLayer({
+                'id': 'parque-lincoln',
+                'type': 'fill',
+                'source': {
+                    'type': 'geojson',
+                    'data': {
+                        'type': 'Feature',
+                        'geometry': {
+                            'type': 'Polygon',
+                            'coordinates': [
+                                [
+                                    [-66.175513, -17.369674],
+                                    [-66.175535, -17.369234],
+                                    [-66.165085, -17.370074],
+                                    [-66.165106, -17.370586],
+                                    [-66.175513, -17.369674]
+                                ]
+                            ]
                         }
                     }
+                },
+                'layout': {},
+                'paint': {
+                    'fill-color': '#008000',
+                    'fill-opacity': 0.5
                 }
             });
 
-            document.getElementById("prev").addEventListener("click", function() {
-                if (currentForm > 1) {
-                    document.getElementById("slide" + currentForm).style.display = "none";
-                    currentForm--;
-                    document.getElementById("slide" + currentForm).style.display =
-                        "block";
+            // Mostrar los árboles existentes en el mapa
+            const arboles = <?php echo json_encode($arboles); ?>;
+            arboles.forEach(arbol => {
+                // Convertir las coordenadas de formato 'POINT(lng lat)' a un array [lng, lat]
+                const coordinates = arbol.coordenadas.replace('POINT(', '').replace(')', '').split(' ');
 
-                    document.getElementById("next").style.display = "block";
-                    if (currentForm === 1) {
-                        document.getElementById("prev").style.display = "none";
-                    }
-                }
+                // Crear un div personalizado para el ícono de árbol
+                const el = document.createElement('div');
+                el.className = 'tree-marker';
+
+                // Crear marcador en el mapa con el ícono personalizado
+                const marker = new mapboxgl.Marker(el)
+                    .setLngLat([parseFloat(coordinates[0]), parseFloat(coordinates[1])])
+                    .addTo(map);
+
+                // Crear popup con los datos del árbol
+                const popup = new mapboxgl.Popup({
+                        offset: 25
+                    })
+                    .setHTML(`
+                        <h3>${arbol.especie}</h3>
+                        <img src="${arbol.fotoUrl}" alt="Foto del árbol" style="width: 150px; height: 150px; object-fit: cover;"/>
+                        <p>Edad del Árbol: ${arbol.edad} años</p>
+                        <p>Altura: ${arbol.altura} metros</p>
+                        <p>Diámetro del Tronco: ${arbol.diametroTronco} cm</p>
+                        <p>Cuidados Necesarios: ${arbol.cuidados}</p>
+                        <p>Estado del Árbol: ${arbol.estado}</p>
+                    `);
+
+                // Asignar popup al marcador
+                marker.setPopup(popup);
             });
+        });
 
-            function validarFormularioActual() {
-                const currentSlide = document.getElementById("slide" + currentForm);
-                const requiredFields = currentSlide.querySelectorAll("[required]");
-                let isValid = true;
+        map.on('click', (e) => {
+            lng = e.lngLat.lng;
+            lat = e.lngLat.lat;
 
-                requiredFields.forEach((field) => {
-                    if (field.value.trim() === "") {
-                        isValid = false;
-                        field.classList.add("campo-invalido");
-                    } else {
-                        field.classList.remove("campo-invalido");
-                    }
-                });
-
-                if (!isValid) {
-                    alert("Por favor, complete todos los campos requeridos.");
-                }
-
-                return isValid;
+            // Si ya hay un marcador, lo movemos
+            if (marker) {
+                marker.setLngLat(e.lngLat);
+            } else {
+                // Crear nuevo marcador y hacerlo movible
+                marker = new mapboxgl.Marker({
+                    draggable: true
+                }).setLngLat(e.lngLat).addTo(map);
             }
-        </script>
 
-        <script>
-            let scrollpos = window.scrollY;
-            const header = document.querySelector(".navbar");
-            const header_height = header.offsetHeight;
-
-            const add_class_on_scroll = () =>
-                header.classList.add("scrolled", "shadow-sm");
-            const remove_class_on_scroll = () =>
-                header.classList.remove("scrolled", "shadow-sm");
-
-            window.addEventListener("scroll", function() {
-                scrollpos = window.scrollY;
-
-                if (scrollpos >= header_height) {
-                    add_class_on_scroll();
-                } else {
-                    remove_class_on_scroll();
-                }
-
-                console.log(scrollpos);
+            // Actualizar las coordenadas cuando se mueva el marcador
+            marker.on('dragend', function() {
+                const lngLat = marker.getLngLat();
+                lng = lngLat.lng;
+                lat = lngLat.lat;
             });
-        </script>
+        });
 
+        // Función para confirmar la ubicación
+        function confirmarUbicacion() {
+            if (lng && lat) {
+                document.getElementById('agregarArbolBtn').disabled = false;
+                alert('Ubicación confirmada');
+            } else {
+                alert('Por favor selecciona una ubicación en el mapa.');
+            }
+        }
 
+        function obtenerCoordenadas() {
+            const form = document.getElementById('arbolForm');
+            const formData = new FormData(form);
+            formData.append('lng', lng);
+            formData.append('lat', lat);
+
+            fetch('administrador.php', {
+                method: 'POST',
+                body: formData
+            }).then(() => {
+                alert('Árbol agregado con éxito');
+                form.reset();
+                document.getElementById('agregarArbolBtn').disabled = true;
+                if (marker) {
+                    marker.remove(); // Remover el marcador del mapa
+                    marker = null; // Resetear la variable
+                }
+            });
+        }
+    </script>
 </body>
 
 </html>

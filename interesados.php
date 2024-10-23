@@ -25,7 +25,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $stmt->execute([$email]);
 
             // Redirige a la página de éxito
-            header("Location: http://localhost/Proyecto%20Reforest/index.html#!");
+            header("Location: http://localhost/Proyecto%20Reforest/index.php");
             exit();
         } catch (PDOException $e) {
             echo "Error: " . $e->getMessage();
