@@ -6,7 +6,7 @@ if ($conn->connect_error) {
 }
 
 // Consulta para obtener los árboles
-$sql = "SELECT especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, ST_AsText(coordenadas) as coordenadas FROM arboles";
+$sql = "SELECT especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, ST_AsText(coordenadas) as coordenadas,qrUrl FROM arboles";
 $result = $conn->query($sql);
 
 // Array para almacenar los árboles
@@ -159,8 +159,60 @@ $conn->close();
 
     .tree-marker {
       border-radius: 50%;
-      
-      background-color:cover;
+
+      background-color: cover;
+    }
+
+    .map-legend {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: rgba(255, 255, 255, 0.8);
+      /* Fondo semitransparente */
+      padding: 10px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      /* Sombra para resaltar la leyenda */
+      z-index: 1000;
+      /* Z-index alto para asegurar que esté sobre el mapa */
+    }
+
+    .map-legend h4 {
+      margin: 0 0 10px;
+      font-size: 14px;
+    }
+
+    .legend-icon {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 8px;
+      border-radius: 2px;
+    }
+
+    .legend-icon.protected {
+      background-color: #ff0000;
+      /* Color rojo para Árboles Protegidos */
+    }
+
+    .legend-icon.native {
+      background-color: #00ff00;
+      /* Color verde para Árboles Nativos */
+    }
+
+    .legend-icon.dangerous {
+      background-color: #ffcc00;
+      /* Color amarillo para Árboles Peligrosos */
+    }
+
+    .container-mapa {
+      max-width: 1000px;
+      /* Cambia este valor según el ancho que prefieras */
+      margin: 0 auto;
+      /* Centra el contenedor horizontalmente */
+
+      /* Opcional: añade espacio alrededor del mapa */
     }
   </style>
   <script>
@@ -197,7 +249,7 @@ $conn->close();
               <a class="nav-link" href="#numbers"></a>
             </li>-->
           <li class="nav-item">
-            <a class="nav-link" href="#map"> Zonas Reforestadas </a>
+            <a class="nav-link" href="#map"> Árboles Registrados </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="#workwithus"> Registrate </a>
@@ -398,7 +450,18 @@ $conn->close();
     </div>
   </div>
 
-  <div class="position-relative overflow-hidden w-100 bg-light" id="map" style="height: 500px"></div>
+  <div class="container-mapa">
+    <div class="position-relative overflow-hidden bg-light" id="map" style="height: 500px; width: 100%;">
+      <div class="map-legend">
+        <h4>Categorías</h4>
+        <div><span class="legend-icon protected"></span> Árboles Peligrosos</div>
+        <div><span class="legend-icon native"></span> Árboles Nativos</div>
+        <div><span class="legend-icon dangerous"></span> Árboles Protegidos</div>
+      </div>
+    </div>
+  </div>
+
+
 
 
   <div class="container py-vh-4 w-100 overflow-hidden">
@@ -619,20 +682,25 @@ $conn->close();
 
   <script src="js/bootstrap.bundle.min.js"></script>
   <script src="js/aos.js"></script>
+
+  <!-- Script Mapbox -->
   <script>
     mapboxgl.accessToken = 'pk.eyJ1IjoiYWxlc3NpcyIsImEiOiJjbGcxbHBtbHQwdDU5M2RubDFodjY3a2x0In0.NXe43GdM4PJBj7ow0Dnkpw';
 
+    // Configuración del mapa
     const map = new mapboxgl.Map({
       container: 'map',
-      style: 'mapbox://styles/mapbox/streets-v11',
-      center: [-66.1704015, -17.3761244],
-      zoom: 12
+      style: 'mapbox://styles/mapbox/outdoors-v11', // Estilo del mapa
+      center: [-66.158468, -17.374908],
+      zoom: 17, // Nivel de zoom inicial
+      pitch: 50, // Inclinación para vista en 3D
+      bearing: -17.6 // Rotación del mapa
     });
 
-    // Enmarcar la zona del parque Lincoln
     map.on('load', function() {
+      // Añadir capa del parque Lincoln
       map.addLayer({
-        'id': 'parque-lincoln',
+        'id': 'Unifranz',
         'type': 'fill',
         'source': {
           'type': 'geojson',
@@ -642,11 +710,11 @@ $conn->close();
               'type': 'Polygon',
               'coordinates': [
                 [
-                  [-66.175513, -17.369674],
-                  [-66.175535, -17.369234],
-                  [-66.165085, -17.370074],
-                  [-66.165106, -17.370586],
-                  [-66.175513, -17.369674]
+                  [-66.157795, -17.374501], // Esquina superior izquierda (Cuarta)
+                  [-66.159077, -17.374442], // Esquina superior derecha (Tercera)
+                  [-66.159136, -17.375289], // Esquina inferior derecha (Segunda)
+                  [-66.157803, -17.375348], // Esquina inferior izquierda (Primera)
+                  [-66.157773, -17.374501] // Cerrar el polígono (repetir primera coordenada)
                 ]
               ]
             }
@@ -654,35 +722,77 @@ $conn->close();
         },
         'layout': {},
         'paint': {
-          'fill-color': '#008000',
-          'fill-opacity': 0.5
+          'fill-color': '#617c1f', // Color del área del parque
+          'fill-opacity': 0.2
         }
+      });
+
+      // Añadir edificios en 3D
+      map.addLayer({
+        'id': '3d-buildings',
+        'source': 'composite',
+        'source-layer': 'building',
+        'filter': ['==', 'extrude', 'true'],
+        'type': 'fill-extrusion',
+        'minzoom': 15,
+        'paint': {
+          'fill-extrusion-color': '#ffffff', // Color de los edificios
+          'fill-extrusion-height': [
+            'interpolate', ['linear'],
+            ['zoom'],
+            15, 0,
+            15.05, ['get', 'height']
+          ],
+          'fill-extrusion-opacity': 0.5
+        }
+      });
+
+      // Ajuste de la iluminación
+      map.setLight({
+        anchor: 'viewport',
+        color: '#ffffff', // Luz cálida
+        intensity: 0.2
       });
     });
 
-    // Obtener los árboles de la base de datos en formato JSON desde PHP
+    // Obtener los datos de los árboles desde PHP
     const arboles = <?php echo json_encode($arboles); ?>;
 
     arboles.forEach(arbol => {
-      // Convertir las coordenadas de formato 'POINT(lng lat)' a un array [lng, lat]
+      // Convertir las coordenadas a formato [lng, lat]
       const coordinates = arbol.coordenadas.replace('POINT(', '').replace(')', '').split(' ');
 
-      // Crear un div personalizado para el ícono de árbol
+      // Crear marcador personalizado con borde según el estado
       const el = document.createElement('div');
       el.className = 'tree-marker';
 
-      // Estilos para el ícono personalizado
-      el.style.backgroundImage = 'url("https://cdn2.iconfinder.com/data/icons/miscellaneous-iii-glyph-style/150/tree-512.png")'; // Cambia esto por el enlace de tu ícono de árbol
+      // Asignar estilo de borde según el estado
+      switch (arbol.estado.toLowerCase()) {
+        case 'peligrosos':
+          el.style.border = '3px solid red';
+          break;
+        case 'protegido':
+          el.style.border = '3px solid yellow';
+          break;
+        case 'nativo':
+          el.style.border = '3px solid green';
+          break;
+        default:
+          el.style.border = '3px solid gray';
+      }
+
+      // Estilos del ícono del árbol
+      el.style.backgroundImage = 'url("https://cdn2.iconfinder.com/data/icons/miscellaneous-iii-glyph-style/150/tree-512.png")';
       el.style.width = '30px';
       el.style.height = '30px';
       el.style.backgroundSize = 'cover';
 
-      // Crear marcador en el mapa con el ícono personalizado
+      // Crear marcador en el mapa
       const marker = new mapboxgl.Marker(el)
         .setLngLat([parseFloat(coordinates[0]), parseFloat(coordinates[1])])
         .addTo(map);
 
-      // Crear popup con los datos del árbol
+      // Crear popup con información del árbol
       const popup = new mapboxgl.Popup({
           offset: 25
         })
@@ -694,12 +804,15 @@ $conn->close();
                 <p>Diámetro del Tronco: ${arbol.diametroTronco} cm</p>
                 <p>Cuidados Necesarios: ${arbol.cuidados}</p>
                 <p>Estado del Árbol: ${arbol.estado}</p>
+                <img src="${arbol.qrUrl}" alt="QR del árbol" style="width: 100px; height: 100px;"/>
             `);
 
-      // Asignar popup al marcador
+      // Asignar el popup al marcador
       marker.setPopup(popup);
     });
   </script>
+
+
 
 
   <script>

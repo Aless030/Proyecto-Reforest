@@ -2,6 +2,9 @@
 // Conexión a la base de datos
 $conn = new mysqli("localhost", "root", "", "reforest", 3308);
 
+// Verifica si la biblioteca phpqrcode está disponible
+require_once 'phpqrcode/qrlib.php';
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Procesar datos del formulario
     $especie = $_POST['especie'];
@@ -13,14 +16,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $diametroTronco = $_POST['diametroTronco'];
     $coordenadas = "POINT(" . $_POST['lng'] . " " . $_POST['lat'] . ")";
 
-    // Insertar en la base de datos
-    $sql = "INSERT INTO arboles (especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, coordenadas) 
-            VALUES ('$especie', $edad, '$cuidados', '$estado', '$fotoUrl', $altura, $diametroTronco, ST_GeomFromText('$coordenadas'))";
-    $conn->query($sql);
+    // Insertar el registro inicial sin QR
+    $sql = "INSERT INTO arboles (especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, coordenadas, qrUrl) 
+            VALUES ('$especie', $edad, '$cuidados', '$estado', '$fotoUrl', $altura, $diametroTronco, ST_GeomFromText('$coordenadas'), NULL)";
+
+    if ($conn->query($sql)) {
+        $lastId = $conn->insert_id; // Obtener el último ID insertado
+
+        // Generar la URL única para este árbol
+        $treeUrl = "https://es.wikipedia.org/wiki/Schinus_molle" . $lastId;
+
+        // Generar el código QR y guardarlo en el servidor
+        $qrFilename = 'qr_codes/qr_' . $lastId . '.png';
+        QRcode::png($treeUrl, $qrFilename, QR_ECLEVEL_L, 4);
+
+        // Actualizar el registro con la URL del QR
+        $updateSql = "UPDATE arboles SET qrUrl = '$qrFilename' WHERE id = $lastId";
+        $conn->query($updateSql);
+    }
 }
 
 // Obtener todos los árboles de la base de datos para mostrarlos en el mapa
-$sql = "SELECT especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, ST_AsText(coordenadas) as coordenadas FROM arboles";
+$sql = "SELECT especie, edad, cuidados, estado, fotoUrl, altura, diametroTronco, ST_AsText(coordenadas) as coordenadas, qrUrl FROM arboles";
 $result = $conn->query($sql);
 
 // Array para almacenar los árboles
@@ -58,7 +75,12 @@ $conn->close();
         <input type="text" name="especie" placeholder="Especie del Árbol" required />
         <input type="number" name="edad" placeholder="Edad del Árbol" required />
         <input type="text" name="cuidados" placeholder="Cuidados Necesarios" required />
-        <input type="text" name="estado" placeholder="Estado del Árbol" required />
+        <select name="estado" required>
+            <option value="">Selecciona una categoría</option>
+            <option value="peligrosos">Peligrosos</option>
+            <option value="protegido">Protegido</option>
+            <option value="nativo">Nativo</option>
+        </select>
         <input type="text" name="fotoUrl" placeholder="URL de la foto" required />
         <input type="number" step="0.1" name="altura" placeholder="Altura en metros" required />
         <input type="number" step="0.1" name="diametroTronco" placeholder="Diámetro en cm" required />
@@ -69,21 +91,23 @@ $conn->close();
     <div id="map" style="width: 100%; height: 500px;"></div>
 
     <script>
+        // Mapbox token
         mapboxgl.accessToken = 'pk.eyJ1IjoiYWxlc3NpcyIsImEiOiJjbGcxbHBtbHQwdDU5M2RubDFodjY3a2x0In0.NXe43GdM4PJBj7ow0Dnkpw';
 
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v11',
-            center: [-66.1704015, -17.3761244],
-            zoom: 12
+            center: [-66.158468, -17.374908],
+            zoom: 17, // Nivel de zoom inicial
+            pitch: 50, // Inclinación para vista en 3D
+            bearing: -17.6 // Rotación del mapa
         });
 
         let marker, lng, lat;
 
-        // Enmarcar la zona del parque Lincoln
         map.on('load', function() {
             map.addLayer({
-                'id': 'parque-lincoln',
+                'id': 'Unifranz',
                 'type': 'fill',
                 'source': {
                     'type': 'geojson',
@@ -93,11 +117,11 @@ $conn->close();
                             'type': 'Polygon',
                             'coordinates': [
                                 [
-                                    [-66.175513, -17.369674],
-                                    [-66.175535, -17.369234],
-                                    [-66.165085, -17.370074],
-                                    [-66.165106, -17.370586],
-                                    [-66.175513, -17.369674]
+                                    [-66.157795, -17.374501], // Esquina superior izquierda (Cuarta)
+                                    [-66.159077, -17.374442], // Esquina superior derecha (Tercera)
+                                    [-66.159136, -17.375289], // Esquina inferior derecha (Segunda)
+                                    [-66.157803, -17.375348], // Esquina inferior izquierda (Primera)
+                                    [-66.157773, -17.374501] // Cerrar el polígono (repetir primera coordenada)
                                 ]
                             ]
                         }
@@ -105,68 +129,93 @@ $conn->close();
                 },
                 'layout': {},
                 'paint': {
-                    'fill-color': '#008000',
+                    'fill-color': '#a3dde8', // Color del área del parque
                     'fill-opacity': 0.5
                 }
             });
-
-            // Mostrar los árboles existentes en el mapa
             const arboles = <?php echo json_encode($arboles); ?>;
             arboles.forEach(arbol => {
-                // Convertir las coordenadas de formato 'POINT(lng lat)' a un array [lng, lat]
                 const coordinates = arbol.coordenadas.replace('POINT(', '').replace(')', '').split(' ');
 
-                // Crear un div personalizado para el ícono de árbol
+                // Crear marcador personalizado con borde según el estado
                 const el = document.createElement('div');
                 el.className = 'tree-marker';
 
-                // Crear marcador en el mapa con el ícono personalizado
+                // Asignar estilo de borde según el estado
+                switch (arbol.estado.toLowerCase()) {
+                    case 'peligrosos':
+                        el.style.border = '3px solid red';
+                        break;
+                    case 'protegido':
+                        el.style.border = '3px solid yellow';
+                        break;
+                    case 'nativo':
+                        el.style.border = '3px solid green';
+                        break;
+                    default:
+                        el.style.border = '3px solid gray';
+                }
+
+                // Crear marcador en el mapa
                 const marker = new mapboxgl.Marker(el)
                     .setLngLat([parseFloat(coordinates[0]), parseFloat(coordinates[1])])
                     .addTo(map);
 
-                // Crear popup con los datos del árbol
+                // Popup con información del árbol
                 const popup = new mapboxgl.Popup({
                         offset: 25
                     })
                     .setHTML(`
-                        <h3>${arbol.especie}</h3>
-                        <img src="${arbol.fotoUrl}" alt="Foto del árbol" style="width: 150px; height: 150px; object-fit: cover;"/>
-                        <p>Edad del Árbol: ${arbol.edad} años</p>
-                        <p>Altura: ${arbol.altura} metros</p>
-                        <p>Diámetro del Tronco: ${arbol.diametroTronco} cm</p>
-                        <p>Cuidados Necesarios: ${arbol.cuidados}</p>
-                        <p>Estado del Árbol: ${arbol.estado}</p>
-                    `);
+                    <h3>${arbol.especie}</h3>
+                    <img src="${arbol.fotoUrl}" alt="Foto del árbol" style="width: 150px; height: 150px; object-fit: cover;" />
+                    <p>Edad del Árbol: ${arbol.edad} años</p>
+                    <p>Altura: ${arbol.altura} metros</p>
+                    <p>Diámetro del Tronco: ${arbol.diametroTronco} cm</p>
+                    <p>Cuidados Necesarios: ${arbol.cuidados}</p>
+                    <p>Categoría: ${arbol.estado}</p>
+                    <img src="${arbol.qrUrl}" alt="QR del árbol" style="width: 100px; height: 100px;" />
+                `);
 
-                // Asignar popup al marcador
                 marker.setPopup(popup);
             });
         });
-
         map.on('click', (e) => {
+            // Obtener las coordenadas del clic
             lng = e.lngLat.lng;
             lat = e.lngLat.lat;
 
-            // Si ya hay un marcador, lo movemos
+            // Crear o mover el marcador
             if (marker) {
-                marker.setLngLat(e.lngLat);
+                marker.setLngLat(e.lngLat); // Mover el marcador existente
             } else {
-                // Crear nuevo marcador y hacerlo movible
                 marker = new mapboxgl.Marker({
-                    draggable: true
-                }).setLngLat(e.lngLat).addTo(map);
+                        draggable: true
+                    }) // Crear un marcador nuevo
+                    .setLngLat(e.lngLat)
+                    .addTo(map);
+
+                // Habilitar la funcionalidad de arrastrar y actualizar las coordenadas
+                marker.on('dragend', function() {
+                    const lngLat = marker.getLngLat();
+                    lng = lngLat.lng;
+                    lat = lngLat.lat;
+                });
             }
 
-            // Actualizar las coordenadas cuando se mueva el marcador
-            marker.on('dragend', function() {
-                const lngLat = marker.getLngLat();
-                lng = lngLat.lng;
-                lat = lngLat.lat;
-            });
+
         });
 
-        // Función para confirmar la ubicación
+        // Confirmar la ubicación seleccionada
+        function confirmarUbicacion() {
+            if (lng && lat) {
+                document.getElementById('agregarArbolBtn').disabled = false; // Habilitar el botón
+                alert('Ubicación confirmada');
+            } else {
+                alert('Por favor selecciona una ubicación en el mapa.');
+            }
+        }
+
+        // Confirmar ubicación
         function confirmarUbicacion() {
             if (lng && lat) {
                 document.getElementById('agregarArbolBtn').disabled = false;
@@ -176,6 +225,7 @@ $conn->close();
             }
         }
 
+        // Enviar datos del formulario
         function obtenerCoordenadas() {
             const form = document.getElementById('arbolForm');
             const formData = new FormData(form);
@@ -187,12 +237,10 @@ $conn->close();
                 body: formData
             }).then(() => {
                 alert('Árbol agregado con éxito');
-                form.reset();
-                document.getElementById('agregarArbolBtn').disabled = true;
-                if (marker) {
-                    marker.remove(); // Remover el marcador del mapa
-                    marker = null; // Resetear la variable
-                }
+                location.reload();
+            }).catch(error => {
+                console.error(error);
+                alert('Error al agregar el árbol');
             });
         }
     </script>
